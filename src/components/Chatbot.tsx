@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { Send, Bot, User, Play, Volume2 } from 'lucide-react'
+import { Send, Bot, User, Play, Volume2, Download } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface Model {
@@ -41,6 +41,7 @@ export default function Chatbot() {
   const [autoPlay, setAutoPlay] = useState(false)
   const [responseLength, setResponseLength] = useState<number[]>([5])
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({})
+  const audioBlobs = useRef<{ [key: string]: Blob }>({})
 
   // Cleanup audio references on unmount
   useEffect(() => {
@@ -107,6 +108,9 @@ export default function Chatbot() {
         const blob = new Blob([uint8Array], { type: 'audio/wav' })
         const audioUrl = URL.createObjectURL(blob)
 
+        // Store blob for download
+        audioBlobs.current[messageId] = blob
+
         // Create audio element
         const audio = new Audio(audioUrl)
         audioRefs.current[messageId] = audio
@@ -168,6 +172,38 @@ export default function Chatbot() {
       audio.currentTime = 0
       setPlayingAudio(null)
     }
+  }
+
+  const downloadAudio = (messageId: string) => {
+    const blob = audioBlobs.current[messageId]
+    if (blob) {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `tts-${messageId}.wav`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  const sendTTSMessage = async () => {
+    if (!input.trim()) return
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: input
+    }
+
+    setMessages(prev => [...prev, userMessage])
+    setInput('')
+
+    // Generate TTS for the user message
+    setTimeout(() => {
+      generateTTS(input, userMessage.id)
+    }, 100) // Small delay to ensure message is rendered
   }
 
   const sendMessage = async () => {
@@ -350,7 +386,7 @@ export default function Chatbot() {
                       >
                         {message.content}
                       </div>
-                      {message.role === 'assistant' && (
+                      <div className={`flex gap-2 ${message.role === 'user' ? 'self-end' : 'self-start'}`}>
                         <Button
                           size="sm"
                           variant="outline"
@@ -362,7 +398,7 @@ export default function Chatbot() {
                             }
                           }}
                           disabled={!message.content.trim() || generatingAudio === message.id}
-                          className="self-start active:scale-95 transition-transform"
+                          className="active:scale-95 transition-transform"
                         >
                           {generatingAudio === message.id ? (
                             <>
@@ -381,7 +417,17 @@ export default function Chatbot() {
                             </>
                           )}
                         </Button>
-                      )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => downloadAudio(message.id)}
+                          disabled={!audioBlobs.current[message.id]}
+                          className="active:scale-95 transition-transform"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Download
+                        </Button>
+                      </div>
                     </div>
                     {message.role === 'user' && (
                       <User className="h-6 w-6 mt-1 text-gray-500" />
@@ -408,6 +454,14 @@ export default function Chatbot() {
                 placeholder="Type your message..."
                 disabled={loading}
               />
+              <Button
+                onClick={sendTTSMessage}
+                disabled={!input.trim()}
+                variant="outline"
+                className="active:scale-95 transition-transform"
+              >
+                <Volume2 className="h-4 w-4" />
+              </Button>
               <Button onClick={sendMessage} disabled={loading || !selectedModel} className="active:scale-95 transition-transform">
                 <Send className="h-4 w-4" />
               </Button>
